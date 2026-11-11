@@ -10,29 +10,29 @@
 
    Cuenta 'SIN CUENTA' = inventario cuyo product code no está en el
    catálogo de product code (hay que darlo de alta).
-   Cuentas de inventario = las que aparecen en inv.CatalogoProdCode para
+   Cuentas de inventario = las que aparecen en invDinamex.CatalogoProdCode para
    ese supply-site.
    BalanceCargado = 0 cuando todavía no se carga el balance de ese
    supply-site y periodo (la diferencia no es real todavía).
    ===================================================================== */
 
-CREATE OR ALTER VIEW inv.vConciliacionContable AS
+CREATE OR ALTER VIEW invDinamex.vConciliacionContable AS
 /*CONSULTA*/
 WITH Inventario AS (
     SELECT d.SupplySite, d.Anio, d.Mes,
            COALESCE(p.CuentaInventario, 'SIN CUENTA') AS Cuenta,
            SUM(d.TotalCost) AS CostoInventario
-    FROM inv.ExistenciasDetalle d
-    JOIN inv.CatalogoArticulos a
+    FROM invDinamex.ExistenciasDetalle d
+    JOIN invDinamex.CatalogoArticulos a
       ON a.SupplySite = d.SupplySite AND a.Item = d.Item
-    LEFT JOIN inv.CatalogoProdCode p
+    LEFT JOIN invDinamex.CatalogoProdCode p
       ON p.SupplySite = d.SupplySite AND p.ProdCode = a.ProdCode
     GROUP BY d.SupplySite, d.Anio, d.Mes, COALESCE(p.CuentaInventario, 'SIN CUENTA')
 ),
 Contable AS (
     SELECT b.SupplySite, b.Anio, b.Mes, b.Cuenta, b.Descripcion, b.SaldoFinal
-    FROM inv.BalanceContable b
-    WHERE EXISTS (SELECT 1 FROM inv.CatalogoProdCode p
+    FROM invDinamex.BalanceContable b
+    WHERE EXISTS (SELECT 1 FROM invDinamex.CatalogoProdCode p
                   WHERE p.SupplySite = b.SupplySite AND p.CuentaInventario = b.Cuenta)
 ),
 Unido AS (
@@ -49,13 +49,13 @@ Unido AS (
 )
 SELECT u.SupplySite, u.Anio, u.Mes, u.Cuenta,
        COALESCE(u.DescripcionBalance,
-                (SELECT MAX(p.DescripcionCuenta) FROM inv.CatalogoProdCode p
+                (SELECT MAX(p.DescripcionCuenta) FROM invDinamex.CatalogoProdCode p
                   WHERE p.SupplySite = u.SupplySite AND p.CuentaInventario = u.Cuenta),
                 'Product code sin cuenta asignada') AS DescripcionCuenta,
        u.CostoInventario,
        u.SaldoContable,
        u.CostoInventario - u.SaldoContable AS Diferencia,
-       CASE WHEN EXISTS (SELECT 1 FROM inv.BalanceContable b
+       CASE WHEN EXISTS (SELECT 1 FROM invDinamex.BalanceContable b
                          WHERE b.SupplySite = u.SupplySite AND b.Anio = u.Anio AND b.Mes = u.Mes)
             THEN 1 ELSE 0 END AS BalanceCargado
 FROM Unido u

@@ -5,15 +5,15 @@
 
    El script se puede ejecutar varias veces: solo crea lo que no existe.
    Orden de carga esperado (paso 2):
-     1. inv.CatalogoProdCode   (manual / archivo pendiente)
-     2. inv.CatalogoArticulos  (desde Excel de inventario)
-     3. inv.ExistenciasDetalle (desde Excel de inventario)
-     4. inv.ExistenciasAcumuladas (desde Excel, agrupando el detalle)
-     5. inv.BalanceContable    (desde txt separado por |)
+     1. invDinamex.CatalogoProdCode   (manual / archivo pendiente)
+     2. invDinamex.CatalogoArticulos  (desde Excel de inventario)
+     3. invDinamex.ExistenciasDetalle (desde Excel de inventario)
+     4. invDinamex.ExistenciasAcumuladas (desde Excel, agrupando el detalle)
+     5. invDinamex.BalanceContable    (desde txt separado por |)
    ===================================================================== */
 
-IF SCHEMA_ID('inv') IS NULL
-    EXEC('CREATE SCHEMA inv');
+IF SCHEMA_ID('invDinamex') IS NULL
+    EXEC('CREATE SCHEMA invDinamex');
 GO
 
 /* ---------------------------------------------------------------------
@@ -21,8 +21,8 @@ GO
    Relaciona cada product code con su cuenta contable de inventario.
    Es la base de la conciliación contable.
    --------------------------------------------------------------------- */
-IF OBJECT_ID('inv.CatalogoProdCode', 'U') IS NULL
-CREATE TABLE inv.CatalogoProdCode (
+IF OBJECT_ID('invDinamex.CatalogoProdCode', 'U') IS NULL
+CREATE TABLE invDinamex.CatalogoProdCode (
     SupplySite           VARCHAR(10)   NOT NULL,  -- empresa propietaria del inventario
     ProdCode             VARCHAR(20)   NOT NULL,
     Descripcion          NVARCHAR(150) NULL,
@@ -38,8 +38,8 @@ GO
    Se carga desde el Excel; si un artículo ya existe y cambian sus
    valores, se actualiza (MERGE en el proceso de carga).
    --------------------------------------------------------------------- */
-IF OBJECT_ID('inv.CatalogoArticulos', 'U') IS NULL
-CREATE TABLE inv.CatalogoArticulos (
+IF OBJECT_ID('invDinamex.CatalogoArticulos', 'U') IS NULL
+CREATE TABLE invDinamex.CatalogoArticulos (
     SupplySite           VARCHAR(10)   NOT NULL,
     Item                 VARCHAR(40)   NOT NULL,
     Descripcion          NVARCHAR(150) NULL,
@@ -64,8 +64,8 @@ GO
    Lote vacío se guarda como '' (una llave primaria no admite NULL).
    Sin llave foránea al catálogo, para poder cargar cada tabla por separado.
    --------------------------------------------------------------------- */
-IF OBJECT_ID('inv.ExistenciasDetalle', 'U') IS NULL
-CREATE TABLE inv.ExistenciasDetalle (
+IF OBJECT_ID('invDinamex.ExistenciasDetalle', 'U') IS NULL
+CREATE TABLE invDinamex.ExistenciasDetalle (
     SupplySite           VARCHAR(10)   NOT NULL,
     Anio                 SMALLINT      NOT NULL,
     Mes                  TINYINT       NOT NULL,
@@ -93,8 +93,8 @@ GO
    forman parte de la llave.
    CostoPromedio se calcula solo: CostoTotal / OnHand.
    --------------------------------------------------------------------- */
-IF OBJECT_ID('inv.ExistenciasAcumuladas', 'U') IS NULL
-CREATE TABLE inv.ExistenciasAcumuladas (
+IF OBJECT_ID('invDinamex.ExistenciasAcumuladas', 'U') IS NULL
+CREATE TABLE invDinamex.ExistenciasAcumuladas (
     SupplySite           VARCHAR(10)   NOT NULL,
     Anio                 SMALLINT      NOT NULL,
     Mes                  TINYINT       NOT NULL,
@@ -116,8 +116,8 @@ GO
    Se carga desde un txt separado por |. La primera línea trae
    supply-site|año|mes; la línea "Site Total" del final se ignora.
    --------------------------------------------------------------------- */
-IF OBJECT_ID('inv.BalanceContable', 'U') IS NULL
-CREATE TABLE inv.BalanceContable (
+IF OBJECT_ID('invDinamex.BalanceContable', 'U') IS NULL
+CREATE TABLE invDinamex.BalanceContable (
     SupplySite           VARCHAR(10)   NOT NULL,
     Anio                 SMALLINT      NOT NULL,
     Mes                  TINYINT       NOT NULL,
@@ -134,9 +134,9 @@ GO
 
 /* Índices de apoyo para filtros del dashboard */
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_CatalogoArticulos_ProdCode')
-    CREATE INDEX IX_CatalogoArticulos_ProdCode ON inv.CatalogoArticulos (SupplySite, ProdCode);
+    CREATE INDEX IX_CatalogoArticulos_ProdCode ON invDinamex.CatalogoArticulos (SupplySite, ProdCode);
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ExistenciasDetalle_Item')
-    CREATE INDEX IX_ExistenciasDetalle_Item ON inv.ExistenciasDetalle (SupplySite, Item, Anio, Mes)
+    CREATE INDEX IX_ExistenciasDetalle_Item ON invDinamex.ExistenciasDetalle (SupplySite, Item, Anio, Mes)
         INCLUDE (OnHand, TotalCost);
 GO

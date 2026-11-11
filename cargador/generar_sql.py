@@ -1,4 +1,4 @@
-"""Genera un script .sql para cargar inv.ExistenciasDetalle desde el Excel de inventario,
+"""Genera un script .sql para cargar invDinamex.ExistenciasDetalle desde el Excel de inventario,
 listo para ejecutarse en SQL Server Management Studio (no requiere Python en el servidor).
 
 Uso:
@@ -33,7 +33,7 @@ def _literal(valor) -> str:
 
 def _ddl_detalle() -> str:
     texto = DDL_DETALLE.read_text(encoding="utf-8")
-    inicio = texto.index("IF OBJECT_ID('inv.ExistenciasDetalle'")
+    inicio = texto.index("IF OBJECT_ID('invDinamex.ExistenciasDetalle'")
     fin = texto.index("GO", inicio)
     return texto[inicio:fin].strip()
 
@@ -45,28 +45,28 @@ def generar(ruta_excel: Path, salida: Path | None = None) -> Path:
     sites = ", ".join(_literal(s) for s in inv.supply_sites)
 
     with salida.open("w", encoding="utf-8-sig", newline="\r\n") as f:
-        f.write(f"/* Carga de inv.ExistenciasDetalle {inv.anio}-{inv.mes:02d}\n")
+        f.write(f"/* Carga de invDinamex.ExistenciasDetalle {inv.anio}-{inv.mes:02d}\n")
         f.write(f"   Origen: {ruta_excel.name}\n")
         f.write(f"   Renglones: {len(inv.detalle):,}   Costo total: {total:,.4f}\n")
         f.write("   Si algo falla, se deshace todo (XACT_ABORT). */\n")
         f.write("SET NOCOUNT ON;\nSET XACT_ABORT ON;\nGO\n")
-        f.write("IF SCHEMA_ID('inv') IS NULL EXEC('CREATE SCHEMA inv');\nGO\n")
+        f.write("IF SCHEMA_ID('invDinamex') IS NULL EXEC('CREATE SCHEMA invDinamex');\nGO\n")
         f.write(_ddl_detalle() + "\nGO\n")
         f.write("/* Quita la llave foránea al catálogo si la tabla se creó con la versión anterior del esquema */\n")
-        f.write("IF OBJECT_ID('inv.FK_ExistenciasDetalle_Articulo', 'F') IS NOT NULL\n"
-                "    ALTER TABLE inv.ExistenciasDetalle DROP CONSTRAINT FK_ExistenciasDetalle_Articulo;\nGO\n")
+        f.write("IF OBJECT_ID('invDinamex.FK_ExistenciasDetalle_Articulo', 'F') IS NOT NULL\n"
+                "    ALTER TABLE invDinamex.ExistenciasDetalle DROP CONSTRAINT FK_ExistenciasDetalle_Articulo;\nGO\n")
         f.write("BEGIN TRANSACTION;\n")
-        f.write(f"DELETE FROM inv.ExistenciasDetalle WHERE Anio = {inv.anio} AND Mes = {inv.mes} "
+        f.write(f"DELETE FROM invDinamex.ExistenciasDetalle WHERE Anio = {inv.anio} AND Mes = {inv.mes} "
                 f"AND SupplySite IN ({sites});\n")
         for inicio in range(0, len(inv.detalle), RENGLONES_POR_INSERT):
-            f.write(f"INSERT INTO inv.ExistenciasDetalle ({', '.join(COLUMNAS)}) VALUES\n")
+            f.write(f"INSERT INTO invDinamex.ExistenciasDetalle ({', '.join(COLUMNAS)}) VALUES\n")
             bloque = inv.detalle[inicio:inicio + RENGLONES_POR_INSERT]
             f.write(",\n".join("(" + ", ".join(_literal(r[c]) for c in COLUMNAS) + ")" for r in bloque))
             f.write(";\n")
         f.write(f"""
 DECLARE @renglones INT, @costo DECIMAL(19,4);
 SELECT @renglones = COUNT(*), @costo = SUM(TotalCost)
-FROM inv.ExistenciasDetalle WHERE Anio = {inv.anio} AND Mes = {inv.mes};
+FROM invDinamex.ExistenciasDetalle WHERE Anio = {inv.anio} AND Mes = {inv.mes};
 IF @renglones <> {len(inv.detalle)} OR @costo <> {total}
 BEGIN
     ROLLBACK TRANSACTION;
@@ -80,7 +80,7 @@ END
 GO
 
 SELECT SupplySite, COUNT(*) AS Renglones, SUM(TotalCost) AS CostoTotal
-FROM inv.ExistenciasDetalle WHERE Anio = {inv.anio} AND Mes = {inv.mes}
+FROM invDinamex.ExistenciasDetalle WHERE Anio = {inv.anio} AND Mes = {inv.mes}
 GROUP BY SupplySite ORDER BY SupplySite;
 """)
     return salida

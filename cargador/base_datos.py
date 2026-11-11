@@ -57,7 +57,7 @@ def guardar_inventario(conexion, inv: Inventario) -> dict[str, int]:
         """)
         _insertar(cursor, "#Catalogo", COLS_CATALOGO, list(inv.catalogo.values()))
         cursor.execute("""
-            MERGE inv.CatalogoArticulos AS t
+            MERGE invDinamex.CatalogoArticulos AS t
             USING #Catalogo AS s ON t.SupplySite = s.SupplySite AND t.Item = s.Item
             WHEN MATCHED AND EXISTS (
                 SELECT t.Descripcion, t.Linea, t.ProdCode, t.UM, t.Stat, t.ABC, t.Tipo
@@ -77,13 +77,13 @@ def guardar_inventario(conexion, inv: Inventario) -> dict[str, int]:
         # 2) Existencias del periodo: se reemplazan para los supply-sites del archivo.
         sites = inv.supply_sites
         marcas = ", ".join("?" * len(sites))
-        for tabla in ("inv.ExistenciasAcumuladas", "inv.ExistenciasDetalle"):
+        for tabla in ("invDinamex.ExistenciasAcumuladas", "invDinamex.ExistenciasDetalle"):
             cursor.execute(
                 f"DELETE FROM {tabla} WHERE Anio = ? AND Mes = ? AND SupplySite IN ({marcas})",
                 inv.anio, inv.mes, *sites,
             )
-        _insertar(cursor, "inv.ExistenciasDetalle", COLS_DETALLE, inv.detalle)
-        _insertar(cursor, "inv.ExistenciasAcumuladas", COLS_ACUMULADAS, inv.acumuladas)
+        _insertar(cursor, "invDinamex.ExistenciasDetalle", COLS_DETALLE, inv.detalle)
+        _insertar(cursor, "invDinamex.ExistenciasAcumuladas", COLS_ACUMULADAS, inv.acumuladas)
 
         conexion.commit()
         return {
@@ -101,11 +101,11 @@ def guardar_balance(conexion, balance: Balance) -> dict[str, int]:
     cursor = conexion.cursor()
     try:
         cursor.execute(
-            "DELETE FROM inv.BalanceContable WHERE SupplySite = ? AND Anio = ? AND Mes = ?",
+            "DELETE FROM invDinamex.BalanceContable WHERE SupplySite = ? AND Anio = ? AND Mes = ?",
             balance.supply_site, balance.anio, balance.mes,
         )
         reemplazadas = cursor.rowcount
-        _insertar(cursor, "inv.BalanceContable", COLS_BALANCE, balance.cuentas)
+        _insertar(cursor, "invDinamex.BalanceContable", COLS_BALANCE, balance.cuentas)
         conexion.commit()
         return {"cuentas": len(balance.cuentas), "reemplazadas": max(reemplazadas, 0)}
     except Exception:
@@ -126,7 +126,7 @@ def guardar_catalogo_prodcode(conexion, catalogo: CatalogoProdCode) -> dict[str,
         """)
         _insertar(cursor, "#ProdCode", COLS_PRODCODE, list(catalogo.registros.values()))
         cursor.execute("""
-            MERGE inv.CatalogoProdCode AS t
+            MERGE invDinamex.CatalogoProdCode AS t
             USING #ProdCode AS s ON t.SupplySite = s.SupplySite AND t.ProdCode = s.ProdCode
             WHEN MATCHED AND EXISTS (
                 SELECT t.Descripcion, t.CuentaInventario, t.DescripcionCuenta
