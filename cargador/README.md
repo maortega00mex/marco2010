@@ -24,10 +24,11 @@ $env:DINAMEX_SQL_CONN = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=mi-servid
 python cargar.py                         # pide el nombre del archivo
 python cargar.py Inv_202610.xlsx         # inventario
 python cargar.py Tom-Baloct26            # balance contable
+python cargar.py ctadist-ok.xlsx         # catálogo de product code -> cuenta
 python cargar.py Inv_202610.xlsx --validar   # solo revisa, no guarda
 ```
 
-El tipo se detecta por la extensión: `.xlsx` / `.xlsm` es inventario; cualquier otro archivo es balance.
+El tipo se detecta solo: un Excel con el año en A1 es inventario; un Excel con encabezados en la fila 1 (supply-site, product-code, cta, desc cuenta, descripcion product-code) es el catálogo de product code; cualquier otro archivo es balance.
 
 ## Qué hace cada carga
 
@@ -42,6 +43,11 @@ El tipo se detecta por la extensión: `.xlsx` / `.xlsm` es inventario; cualquier
 
 - Reemplaza el balance de ese supply-site y periodo.
 - Ignora las líneas sin `|` (totales y separadores).
+
+**Catálogo de product code** (fila 1: encabezados)
+
+- Inserta los nuevos y actualiza los que cambiaron.
+- Renglones repetidos se ignoran. Si un product code trae dos cuentas distintas, se usa la que más se repite y se muestra un aviso.
 
 Cada carga corre en una sola transacción: si algo falla, no se guarda nada.
 

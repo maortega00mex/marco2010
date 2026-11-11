@@ -315,3 +315,108 @@ def leer_balance(ruta: str | Path) -> Balance:
     if not balance.cuentas:
         raise ErrorDeArchivo("El balance no trae cuentas.")
     return balance
+
+
+# ----------------------------------------------------------------------------
+# Catálogo de product code (Excel: prodcode -> cuenta de inventario)
+# ----------------------------------------------------------------------------
+
+COLUMNAS_PRODCODE = {
+    "SUPPLY-SITE": "supply_site",
+    "PRODUCT-CODE": "prodcode",
+    "PORDUCT-CODE": "prodcode",
+    "PRODCODE": "prodcode",
+    "PRODUCT CODE": "prodcode",
+    "CTA": "cuenta",
+    "CUENTA": "cuenta",
+    "CUENTA DE INVENTARIO": "cuenta",
+    "DESC CUENTA": "desc_cuenta",
+    "DESCRIPCION CUENTA": "desc_cuenta",
+    "DESCRIPCION PRODUCT-CODE": "desc_prodcode",
+    "DESCRIPCION PRODCODE": "desc_prodcode",
+    "DESCRIPCION": "desc_prodcode",
+}
+
+
+@dataclass
+class CatalogoProdCode:
+    registros: dict[tuple[str, str], dict] = field(default_factory=dict)
+    avisos: list[str] = field(default_factory=list)
+
+    def resumen(self) -> str:
+        por_ss: dict[str, int] = defaultdict(int)
+        for ss, _ in self.registros:
+            por_ss[ss] += 1
+        lineas = [f"Product codes: {len(self.registros):,}", "Por supply-site:"]
+        lineas += [f"  {ss}: {n:,}" for ss, n in sorted(por_ss.items())]
+        lineas += [f"Aviso: {a}" for a in self.avisos]
+        return "\n".join(lineas)
+
+
+def es_excel_de_inventario(ruta: str | Path) -> bool:
+    """El Excel de inventario trae el año (un número) en A1; el catálogo trae encabezados."""
+    from openpyxl import load_workbook
+
+    libro = load_workbook(ruta, read_only=True, data_only=True)
+    try:
+        primera = next(libro.worksheets[0].iter_rows(max_row=1, values_only=True), ())
+    finally:
+        libro.close()
+    a1 = primera[0] if primera else None
+    return isinstance(a1, (int, float)) or (isinstance(a1, str) and a1.strip().isdigit())
+
+
+def leer_catalogo_prodcode(ruta: str | Path) -> CatalogoProdCode:
+    from openpyxl import load_workbook
+
+    libro = load_workbook(ruta, read_only=True, data_only=True)
+    try:
+        filas = libro.worksheets[0].iter_rows(values_only=True)
+        encabezados = next(filas, None) or ()
+        indice: dict[str, int] = {}
+        for i, nombre in enumerate(encabezados):
+            interno = COLUMNAS_PRODCODE.get(_normalizar(nombre))
+            if interno and interno not in indice:
+                indice[interno] = i
+        faltan = [c for c in ("supply_site", "prodcode", "cuenta") if c not in indice]
+        if faltan:
+            raise ErrorDeArchivo(f"Faltan columnas en la fila 1 del catálogo: {', '.join(faltan)}.")
+
+        # Se juntan todas las cuentas que trae cada product code para detectar conflictos.
+        vistos: dict[tuple[str, str], list[dict]] = defaultdict(list)
+        for numero, fila in enumerate(filas, start=2):
+            def v(nombre: str):
+                i = indice.get(nombre)
+                return fila[i] if i is not None and i < len(fila) else None
+
+            ss, prodcode, cuenta = _texto(v("supply_site")), _texto(v("prodcode")), _texto(v("cuenta"))
+            if not (ss or prodcode or cuenta):
+                continue
+            if not (ss and prodcode and cuenta):
+                raise ErrorDeArchivo(f"Fila {numero}: faltan supply-site, product code o cuenta.")
+            vistos[(ss, prodcode)].append({
+                "SupplySite": ss,
+                "ProdCode": prodcode,
+                "Descripcion": _texto(v("desc_prodcode")) or None,
+                "CuentaInventario": cuenta,
+                "DescripcionCuenta": _texto(v("desc_cuenta")) or None,
+            })
+
+        catalogo = CatalogoProdCode()
+        for llave, opciones in vistos.items():
+            cuentas = [o["CuentaInventario"] for o in opciones]
+            if len(set(cuentas)) > 1:
+                # Conflicto: se usa la cuenta que más se repite y se avisa.
+                elegida = max(set(cuentas), key=lambda c: (cuentas.count(c), c))
+                catalogo.avisos.append(
+                    f"{llave[0]} prodcode {llave[1]} trae varias cuentas "
+                    f"({', '.join(sorted(set(cuentas)))}); se usa {elegida}."
+                )
+                opciones = [o for o in opciones if o["CuentaInventario"] == elegida]
+            catalogo.registros[llave] = opciones[0]
+
+        if not catalogo.registros:
+            raise ErrorDeArchivo("El catálogo de product code no trae renglones.")
+        return catalogo
+    finally:
+        libro.close()

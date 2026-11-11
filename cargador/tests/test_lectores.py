@@ -121,3 +121,31 @@ def test_balance_cuenta_repetida(tmp_path):
     ruta.write_text("STOM|2026|10\n1|A|1|0|0|1|\n1|B|1|0|0|1|\n")
     with pytest.raises(ErrorDeArchivo, match="repetida"):
         leer_balance(ruta)
+
+
+def _catalogo(tmp_path, filas):
+    libro = Workbook()
+    libro.active.append(["supply-site", "porduct-code", "cta ", "desc cuenta", "descripcion product-code"])
+    for fila in filas:
+        libro.active.append(fila)
+    ruta = tmp_path / "cat.xlsx"
+    libro.save(ruta)
+    return ruta
+
+
+def test_catalogo_prodcode_y_deteccion(tmp_path):
+    from lectores import es_excel_de_inventario, leer_catalogo_prodcode
+    ruta = _catalogo(tmp_path, [
+        ["STOM", 1020, 12400002, "Inventarios PT", "ARNES"],
+        ["STOM", 1020, 12400002, "Inventarios PT", "ARNES"],  # repetido idéntico: se ignora
+        ["STOM", 9999, 11700002, "MP", "GENERAL"],
+        ["STOM", 9999, 11700002, "MP", "GENERAL"],
+        ["STOM", 9999, 12500000, "Transito", "GENERAL"],
+    ])
+    assert not es_excel_de_inventario(ruta)
+    assert es_excel_de_inventario(_excel(tmp_path, [_fila()]))
+    cat = leer_catalogo_prodcode(ruta)
+    assert len(cat.registros) == 2
+    assert cat.registros[("STOM", "1020")]["CuentaInventario"] == "12400002"
+    assert cat.registros[("STOM", "9999")]["CuentaInventario"] == "11700002"
+    assert len(cat.avisos) == 1 and "9999" in cat.avisos[0]
