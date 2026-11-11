@@ -62,6 +62,7 @@ GO
    para un mismo supply-site.
    SupplySite = SUPPLY-SITE del Excel; si viene vacío se usa SITE.
    Lote vacío se guarda como '' (una llave primaria no admite NULL).
+   Sin llave foránea al catálogo, para poder cargar cada tabla por separado.
    --------------------------------------------------------------------- */
 IF OBJECT_ID('inv.ExistenciasDetalle', 'U') IS NULL
 CREATE TABLE inv.ExistenciasDetalle (
@@ -80,8 +81,6 @@ CREATE TABLE inv.ExistenciasDetalle (
     Pronostico           DECIMAL(18,4) NULL,
     Empresa              NVARCHAR(150) NULL,
     CONSTRAINT PK_ExistenciasDetalle PRIMARY KEY (SupplySite, Anio, Mes, Site, Whse, Loc, Item, Lot),
-    CONSTRAINT FK_ExistenciasDetalle_Articulo FOREIGN KEY (SupplySite, Item)
-        REFERENCES inv.CatalogoArticulos (SupplySite, Item),
     CONSTRAINT CK_ExistenciasDetalle_Mes CHECK (Mes BETWEEN 1 AND 12),
     CONSTRAINT CK_ExistenciasDetalle_NonNet CHECK (NonNetteable IN ('no', 'yes'))
 );
@@ -107,8 +106,6 @@ CREATE TABLE inv.ExistenciasAcumuladas (
     CostoTotal           DECIMAL(19,4) NOT NULL,
     CostoPromedio        AS CAST(CostoTotal / NULLIF(OnHand, 0) AS DECIMAL(19,8)) PERSISTED,
     CONSTRAINT PK_ExistenciasAcumuladas PRIMARY KEY (SupplySite, Anio, Mes, Item, Site, NonNetteable),
-    CONSTRAINT FK_ExistenciasAcumuladas_Articulo FOREIGN KEY (SupplySite, Item)
-        REFERENCES inv.CatalogoArticulos (SupplySite, Item),
     CONSTRAINT CK_ExistenciasAcumuladas_Mes CHECK (Mes BETWEEN 1 AND 12),
     CONSTRAINT CK_ExistenciasAcumuladas_NonNet CHECK (NonNetteable IN ('no', 'yes'))
 );
