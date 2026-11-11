@@ -16,7 +16,7 @@ El script se puede correr varias veces: solo crea lo que falta. Todo queda en el
 
 | Tabla | Llave primaria | Origen |
 |---|---|---|
-| `inv.ExistenciasDetalle` | SupplySite, Anio, Mes, Whse, Loc, Item, Lot | Excel de inventario (un renglón por ubicación y lote) |
+| `inv.ExistenciasDetalle` | SupplySite, Anio, Mes, Site, Whse, Loc, Item, Lot | Excel de inventario (un renglón por ubicación y lote) |
 | `inv.CatalogoArticulos` | SupplySite, Item | Excel de inventario; se actualiza si cambian los valores |
 | `inv.ExistenciasAcumuladas` | SupplySite, Anio, Mes, Item, Site, NonNetteable | Excel de inventario, agrupando el detalle |
 | `inv.CatalogoProdCode` | SupplySite, ProdCode | Pendiente: relación prodcode → cuenta de inventario |

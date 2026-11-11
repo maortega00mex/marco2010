@@ -58,6 +58,8 @@ GO
 /* ---------------------------------------------------------------------
    Existencias Detalle
    Un renglón por cada renglón del Excel (ubicación y lote).
+   Site va en la llave: el mismo whse/loc/lote puede existir en dos sites
+   para un mismo supply-site.
    SupplySite = SUPPLY-SITE del Excel; si viene vacío se usa SITE.
    Lote vacío se guarda como '' (una llave primaria no admite NULL).
    --------------------------------------------------------------------- */
@@ -77,7 +79,7 @@ CREATE TABLE inv.ExistenciasDetalle (
     TotalCost            DECIMAL(19,4) NOT NULL,
     Pronostico           DECIMAL(18,4) NULL,
     Empresa              NVARCHAR(150) NULL,
-    CONSTRAINT PK_ExistenciasDetalle PRIMARY KEY (SupplySite, Anio, Mes, Whse, Loc, Item, Lot),
+    CONSTRAINT PK_ExistenciasDetalle PRIMARY KEY (SupplySite, Anio, Mes, Site, Whse, Loc, Item, Lot),
     CONSTRAINT FK_ExistenciasDetalle_Articulo FOREIGN KEY (SupplySite, Item)
         REFERENCES inv.CatalogoArticulos (SupplySite, Item),
     CONSTRAINT CK_ExistenciasDetalle_Mes CHECK (Mes BETWEEN 1 AND 12),
