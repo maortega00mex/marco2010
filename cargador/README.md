@@ -15,7 +15,7 @@ pip install -r requirements.txt
 Define la conexión en la variable de entorno `DINAMEX_SQL_CONN` (Windows / PowerShell):
 
 ```
-$env:DINAMEX_SQL_CONN = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=mi-servidor;DATABASE=Dinamex;Trusted_Connection=yes;TrustServerCertificate=yes"
+$env:DINAMEX_SQL_CONN = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=mi-servidor;DATABASE=invDinamex;Trusted_Connection=yes;TrustServerCertificate=yes"
 ```
 
 ## Uso
