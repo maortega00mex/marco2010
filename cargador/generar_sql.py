@@ -5,6 +5,7 @@ Uso:
     python generar_sql.py Inv_202609.xlsx            # crea ExistenciasDetalle_202609.sql
     python generar_sql.py Inv_202609.xlsx -o otro.sql
     python generar_sql.py Inv_202609.xlsx --tabla catalogo   # crea CatalogoArticulos_202609.sql
+    python generar_sql.py ctadist-ok.xlsx                    # crea CatalogoProdCode.sql
 
 El script crea la tabla si no existe, borra el periodo y lo vuelve a insertar
 dentro de una transacción, y al final compara renglones y costo total.
@@ -16,7 +17,7 @@ import sys
 from decimal import Decimal
 from pathlib import Path
 
-from lectores import ErrorDeArchivo, leer_inventario
+from lectores import ErrorDeArchivo, es_excel_de_inventario, leer_catalogo_prodcode, leer_inventario
 
 DDL_DETALLE = Path(__file__).resolve().parents[1] / "database" / "01_esquema.sql"
 RENGLONES_POR_INSERT = 1000  # máximo que permite INSERT ... VALUES en SQL Server
@@ -113,6 +114,69 @@ FROM dbo.CatalogoArticulos GROUP BY SupplySite ORDER BY SupplySite;
     return salida
 
 
+def generar_prodcode(ruta_excel: Path, salida: Path | None = None) -> Path:
+    """Script que inserta los product codes nuevos y actualiza los que cambiaron en dbo.CatalogoProdCode."""
+    catalogo = leer_catalogo_prodcode(ruta_excel)
+    salida = salida or ruta_excel.with_name("CatalogoProdCode.sql")
+    registros = sorted(catalogo.registros.values(), key=lambda r: (r["SupplySite"], r["ProdCode"]))
+    columnas = ["SupplySite", "ProdCode", "Descripcion", "CuentaInventario", "DescripcionCuenta"]
+
+    with salida.open("w", encoding="utf-8-sig", newline="\r\n") as f:
+        f.write(f"/* Catálogo de product code desde {ruta_excel.name}\n")
+        f.write(f"   Product codes: {len(registros):,}\n")
+        for aviso in catalogo.avisos:
+            f.write(f"   Aviso: {aviso}\n")
+        f.write("   Inserta los nuevos y actualiza los que cambiaron; no borra los que ya no vienen.\n")
+        f.write("   Si algo falla, se deshace todo (XACT_ABORT). */\n")
+        f.write("SET NOCOUNT ON;\nSET XACT_ABORT ON;\nGO\n")
+        f.write("USE invDinamex;\nGO\n")
+        f.write(_ddl("CatalogoProdCode") + "\nGO\n")
+        f.write("""IF OBJECT_ID('tempdb..#ProdCode') IS NOT NULL DROP TABLE #ProdCode;
+CREATE TABLE #ProdCode (
+    SupplySite VARCHAR(10) NOT NULL, ProdCode VARCHAR(20) NOT NULL,
+    Descripcion NVARCHAR(150) NULL, CuentaInventario VARCHAR(20) NULL, DescripcionCuenta NVARCHAR(150) NULL,
+    PRIMARY KEY (SupplySite, ProdCode));
+""")
+        _inserts(f, "#ProdCode", columnas, registros)
+        f.write(f"""
+DECLARE @Cambios TABLE (Accion NVARCHAR(10));
+BEGIN TRANSACTION;
+MERGE dbo.CatalogoProdCode AS t
+USING #ProdCode AS s ON t.SupplySite = s.SupplySite AND t.ProdCode = s.ProdCode
+WHEN MATCHED AND EXISTS (
+    SELECT t.Descripcion, t.CuentaInventario, t.DescripcionCuenta
+    EXCEPT
+    SELECT s.Descripcion, s.CuentaInventario, s.DescripcionCuenta)
+  THEN UPDATE SET Descripcion = s.Descripcion, CuentaInventario = s.CuentaInventario,
+                  DescripcionCuenta = s.DescripcionCuenta, FechaActualizacion = SYSDATETIME()
+WHEN NOT MATCHED BY TARGET
+  THEN INSERT (SupplySite, ProdCode, Descripcion, CuentaInventario, DescripcionCuenta)
+       VALUES (s.SupplySite, s.ProdCode, s.Descripcion, s.CuentaInventario, s.DescripcionCuenta)
+OUTPUT $action INTO @Cambios;
+
+IF (SELECT COUNT(*) FROM dbo.CatalogoProdCode c
+    WHERE EXISTS (SELECT 1 FROM #ProdCode s WHERE s.SupplySite = c.SupplySite AND s.ProdCode = c.ProdCode)) <> {len(registros)}
+BEGIN
+    ROLLBACK TRANSACTION;
+    RAISERROR('La validación no cuadra. No se guardó nada.', 16, 1);
+END
+ELSE
+BEGIN
+    COMMIT TRANSACTION;
+    SELECT SUM(CASE WHEN Accion = 'INSERT' THEN 1 ELSE 0 END) AS ProdCodesNuevos,
+           SUM(CASE WHEN Accion = 'UPDATE' THEN 1 ELSE 0 END) AS ProdCodesActualizados,
+           (SELECT COUNT(*) FROM dbo.CatalogoProdCode) AS TotalCatalogo
+    FROM @Cambios;
+END
+DROP TABLE #ProdCode;
+GO
+
+SELECT SupplySite, CuentaInventario, MAX(DescripcionCuenta) AS DescripcionCuenta, COUNT(*) AS ProdCodes
+FROM dbo.CatalogoProdCode GROUP BY SupplySite, CuentaInventario ORDER BY SupplySite, CuentaInventario;
+""")
+    return salida
+
+
 def generar(ruta_excel: Path, salida: Path | None = None) -> Path:
     inv = leer_inventario(ruta_excel)
     salida = salida or ruta_excel.with_name(f"ExistenciasDetalle_{inv.anio}{inv.mes:02d}.sql")
@@ -165,12 +229,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Genera el script SQL de carga de ExistenciasDetalle.")
     parser.add_argument("archivo", help="Excel de inventario")
     parser.add_argument("-o", "--salida", help="Archivo .sql de salida")
-    parser.add_argument("-t", "--tabla", choices=["detalle", "catalogo"], default="detalle",
-                        help="detalle = ExistenciasDetalle (default); catalogo = CatalogoArticulos")
+    parser.add_argument("-t", "--tabla", choices=["detalle", "catalogo", "prodcode"],
+                        help="detalle = ExistenciasDetalle; catalogo = CatalogoArticulos; prodcode = CatalogoProdCode. "
+                             "Si no se indica: detalle para el Excel de inventario y prodcode para el de cuentas.")
     args = parser.parse_args(argv)
     ruta = Path(args.archivo)
     try:
-        funcion = generar_catalogo if args.tabla == "catalogo" else generar
+        tabla = args.tabla or ("detalle" if es_excel_de_inventario(ruta) else "prodcode")
+        funcion = {"detalle": generar, "catalogo": generar_catalogo, "prodcode": generar_prodcode}[tabla]
         salida = funcion(ruta, Path(args.salida) if args.salida else None)
     except ErrorDeArchivo as error:
         print(f"Error en el archivo: {error}", file=sys.stderr)
