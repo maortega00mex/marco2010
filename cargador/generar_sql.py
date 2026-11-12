@@ -1,9 +1,10 @@
-"""Genera un script .sql para cargar dbo.ExistenciasDetalle desde el Excel de inventario,
+"""Genera un script .sql para cargar dbo.ExistenciasDetalle o dbo.CatalogoArticulos desde el Excel de inventario,
 listo para ejecutarse en SQL Server Management Studio (no requiere Python en el servidor).
 
 Uso:
     python generar_sql.py Inv_202609.xlsx            # crea ExistenciasDetalle_202609.sql
     python generar_sql.py Inv_202609.xlsx -o otro.sql
+    python generar_sql.py Inv_202609.xlsx --tabla catalogo   # crea CatalogoArticulos_202609.sql
 
 El script crea la tabla si no existe, borra el periodo y lo vuelve a insertar
 dentro de una transacción, y al final compara renglones y costo total.
@@ -31,11 +32,85 @@ def _literal(valor) -> str:
     return "N'" + str(valor).replace("'", "''") + "'"
 
 
-def _ddl_detalle() -> str:
+def _ddl(tabla: str = "ExistenciasDetalle") -> str:
     texto = DDL_DETALLE.read_text(encoding="utf-8")
-    inicio = texto.index("IF OBJECT_ID('dbo.ExistenciasDetalle'")
+    inicio = texto.index(f"IF OBJECT_ID('dbo.{tabla}'")
     fin = texto.index("GO", inicio)
     return texto[inicio:fin].strip()
+
+
+COLUMNAS_CATALOGO = ["SupplySite", "Item", "Descripcion", "Linea", "ProdCode", "UM", "Stat", "ABC", "Tipo"]
+
+
+def _inserts(f, tabla: str, columnas: list[str], filas: list[dict]) -> None:
+    for inicio in range(0, len(filas), RENGLONES_POR_INSERT):
+        f.write(f"INSERT INTO {tabla} ({', '.join(columnas)}) VALUES\n")
+        bloque = filas[inicio:inicio + RENGLONES_POR_INSERT]
+        f.write(",\n".join("(" + ", ".join(_literal(r[c]) for c in columnas) + ")" for r in bloque))
+        f.write(";\n")
+
+
+def generar_catalogo(ruta_excel: Path, salida: Path | None = None) -> Path:
+    """Script que inserta los artículos nuevos y actualiza los que cambiaron en dbo.CatalogoArticulos."""
+    inv = leer_inventario(ruta_excel)
+    salida = salida or ruta_excel.with_name(f"CatalogoArticulos_{inv.anio}{inv.mes:02d}.sql")
+    articulos = sorted(inv.catalogo.values(), key=lambda r: (r["SupplySite"], r["Item"]))
+
+    with salida.open("w", encoding="utf-8-sig", newline="\r\n") as f:
+        f.write(f"/* Catálogo de artículos desde {ruta_excel.name} ({inv.anio}-{inv.mes:02d})\n")
+        f.write(f"   Artículos en el archivo: {len(articulos):,}\n")
+        f.write("   Inserta los nuevos y actualiza los que cambiaron; no borra los que ya no vienen.\n")
+        f.write("   Si un artículo trae datos distintos en varios renglones, se usan los del renglón\n")
+        f.write("   con mayor costo total. Si algo falla, se deshace todo (XACT_ABORT). */\n")
+        f.write("SET NOCOUNT ON;\nSET XACT_ABORT ON;\nGO\n")
+        f.write("USE invDinamex;\nGO\n")
+        f.write(_ddl("CatalogoArticulos") + "\nGO\n")
+        f.write("""IF OBJECT_ID('tempdb..#Catalogo') IS NOT NULL DROP TABLE #Catalogo;
+CREATE TABLE #Catalogo (
+    SupplySite VARCHAR(10) NOT NULL, Item VARCHAR(40) NOT NULL,
+    Descripcion NVARCHAR(150) NULL, Linea NVARCHAR(60) NULL, ProdCode VARCHAR(20) NULL,
+    UM VARCHAR(10) NULL, Stat CHAR(1) NULL, ABC VARCHAR(2) NULL, Tipo VARCHAR(5) NULL,
+    PRIMARY KEY (SupplySite, Item));
+""")
+        _inserts(f, "#Catalogo", COLUMNAS_CATALOGO, articulos)
+        f.write(f"""
+DECLARE @Cambios TABLE (Accion NVARCHAR(10));
+BEGIN TRANSACTION;
+MERGE dbo.CatalogoArticulos AS t
+USING #Catalogo AS s ON t.SupplySite = s.SupplySite AND t.Item = s.Item
+WHEN MATCHED AND EXISTS (
+    SELECT t.Descripcion, t.Linea, t.ProdCode, t.UM, t.Stat, t.ABC, t.Tipo
+    EXCEPT
+    SELECT s.Descripcion, s.Linea, s.ProdCode, s.UM, s.Stat, s.ABC, s.Tipo)
+  THEN UPDATE SET Descripcion = s.Descripcion, Linea = s.Linea, ProdCode = s.ProdCode,
+                  UM = s.UM, Stat = s.Stat, ABC = s.ABC, Tipo = s.Tipo,
+                  FechaActualizacion = SYSDATETIME()
+WHEN NOT MATCHED BY TARGET
+  THEN INSERT (SupplySite, Item, Descripcion, Linea, ProdCode, UM, Stat, ABC, Tipo)
+       VALUES (s.SupplySite, s.Item, s.Descripcion, s.Linea, s.ProdCode, s.UM, s.Stat, s.ABC, s.Tipo)
+OUTPUT $action INTO @Cambios;
+
+IF (SELECT COUNT(*) FROM dbo.CatalogoArticulos c
+    WHERE EXISTS (SELECT 1 FROM #Catalogo s WHERE s.SupplySite = c.SupplySite AND s.Item = c.Item)) <> {len(articulos)}
+BEGIN
+    ROLLBACK TRANSACTION;
+    RAISERROR('La validación no cuadra. No se guardó nada.', 16, 1);
+END
+ELSE
+BEGIN
+    COMMIT TRANSACTION;
+    SELECT SUM(CASE WHEN Accion = 'INSERT' THEN 1 ELSE 0 END) AS ArticulosNuevos,
+           SUM(CASE WHEN Accion = 'UPDATE' THEN 1 ELSE 0 END) AS ArticulosActualizados,
+           (SELECT COUNT(*) FROM dbo.CatalogoArticulos) AS TotalCatalogo
+    FROM @Cambios;
+END
+DROP TABLE #Catalogo;
+GO
+
+SELECT SupplySite, COUNT(*) AS Articulos
+FROM dbo.CatalogoArticulos GROUP BY SupplySite ORDER BY SupplySite;
+""")
+    return salida
 
 
 def generar(ruta_excel: Path, salida: Path | None = None) -> Path:
@@ -51,7 +126,7 @@ def generar(ruta_excel: Path, salida: Path | None = None) -> Path:
         f.write("   Si algo falla, se deshace todo (XACT_ABORT). */\n")
         f.write("SET NOCOUNT ON;\nSET XACT_ABORT ON;\nGO\n")
         f.write("USE invDinamex;\nGO\n")
-        f.write(_ddl_detalle() + "\nGO\n")
+        f.write(_ddl() + "\nGO\n")
         f.write("/* Quita la llave foránea al catálogo si la tabla se creó con la versión anterior del esquema */\n")
         f.write("IF OBJECT_ID('dbo.FK_ExistenciasDetalle_Articulo', 'F') IS NOT NULL\n"
                 "    ALTER TABLE dbo.ExistenciasDetalle DROP CONSTRAINT FK_ExistenciasDetalle_Articulo;\nGO\n")
@@ -90,10 +165,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Genera el script SQL de carga de ExistenciasDetalle.")
     parser.add_argument("archivo", help="Excel de inventario")
     parser.add_argument("-o", "--salida", help="Archivo .sql de salida")
+    parser.add_argument("-t", "--tabla", choices=["detalle", "catalogo"], default="detalle",
+                        help="detalle = ExistenciasDetalle (default); catalogo = CatalogoArticulos")
     args = parser.parse_args(argv)
     ruta = Path(args.archivo)
     try:
-        salida = generar(ruta, Path(args.salida) if args.salida else None)
+        funcion = generar_catalogo if args.tabla == "catalogo" else generar
+        salida = funcion(ruta, Path(args.salida) if args.salida else None)
     except ErrorDeArchivo as error:
         print(f"Error en el archivo: {error}", file=sys.stderr)
         return 1
