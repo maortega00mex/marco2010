@@ -149,3 +149,32 @@ def test_catalogo_prodcode_y_deteccion(tmp_path):
     assert cat.registros[("STOM", "1020")]["CuentaInventario"] == "12400002"
     assert cat.registros[("STOM", "9999")]["CuentaInventario"] == "11700002"
     assert len(cat.avisos) == 1 and "9999" in cat.avisos[0]
+
+
+REPORTE = (
+    "Account      Description                                    Beginning Balance      Period Debit     Period Credit     Ending Balance\r\n"
+    "------------ ----------------------------------------      ------------------ ----------------- ----------------- ------------------\r\n"
+    "1170-0002    Inventarios MP - Material              @           28,467,027.99      7,566,285.39      9,291,324.75      26,741,988.63\r\n"
+    "1350-0104    DEP Herramentales                             -        51,939.33              0.00              0.00 -        51,939.33\r\n"
+    "2000-0370    10.667% IVA Retenido sobre Honorarios                  60,721.45         19,302.07         22,029.28          57,994.24\r\n"
+    "                                                \r\n"
+)
+
+
+def test_balanza_reporte_periodo_desde_nombre(tmp_path):
+    ruta = tmp_path / "Tomco-Balanza-sept26.txt"
+    ruta.write_bytes(REPORTE.encode())
+    bal = leer_balance(ruta)
+    assert (bal.supply_site, bal.anio, bal.mes) == ("STOM", 2026, 9)
+    assert [c["Cuenta"] for c in bal.cuentas] == ["11700002", "13500104", "20000370"]
+    assert bal.cuentas[1]["SaldoInicial"] == Decimal("-51939.33")
+    assert bal.cuentas[2]["Descripcion"] == "10.667% IVA Retenido sobre Honorarios"
+    assert bal.cuentas[0]["SaldoFinal"] == Decimal("26741988.63")
+
+
+def test_balanza_reporte_sin_periodo(tmp_path):
+    ruta = tmp_path / "balanza.txt"
+    ruta.write_bytes(REPORTE.encode())
+    with pytest.raises(ErrorDeArchivo, match="--supply-site"):
+        leer_balance(ruta)
+    assert leer_balance(ruta, "SDID", 2026, 8).supply_site == "SDID"

@@ -254,6 +254,7 @@ class Balance:
             f"Cuentas: {len(self.cuentas):,}",
             f"Cargos: ${cargos:,.2f}",
             f"Abonos: ${abonos:,.2f}",
+            f"Cuadra (cargos = abonos): {'sí' if cargos == abonos else 'NO'}",
         ])
 
 
@@ -265,7 +266,77 @@ def _leer_texto(ruta: str | Path) -> str:
         return datos.decode("cp1252")
 
 
-def leer_balance(ruta: str | Path) -> Balance:
+_IMPORTE = r"((?:-\s*)?\d[\d,]*\.\d{2})"
+_RENGLON_REPORTE = re.compile(
+    r"^(\d{4}-\d{4})\s+(.*?)\s+" + r"\s+".join([_IMPORTE] * 4) + r"\s*$"
+)
+_MESES = {"ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8,
+          "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dic": 12}
+_EMPRESAS = {"TOMCO": "STOM", "TOM": "STOM"}
+
+
+def periodo_desde_nombre(ruta: str | Path) -> tuple[str | None, int | None, int | None]:
+    """'Tomco-Balanza-sept26.txt' -> ('STOM', 2026, 9). Devuelve None en lo que no reconozca."""
+    nombre = Path(ruta).stem
+    partes = [p for p in re.split(r"[^A-Za-z0-9]+", nombre) if p]
+    supply_site = next((_EMPRESAS[p.upper()] for p in partes if p.upper() in _EMPRESAS), None)
+    anio = mes = None
+    for p in partes:
+        m = re.fullmatch(r"([A-Za-z]+)(\d{2}|\d{4})", p)
+        if m and m.group(1).lower() in _MESES:
+            mes = _MESES[m.group(1).lower()]
+            anio = int(m.group(2)) + (2000 if len(m.group(2)) == 2 else 0)
+    return supply_site, anio, mes
+
+
+def _importe_reporte(texto: str) -> Decimal:
+    return Decimal(re.sub(r"[\s,]", "", texto))
+
+
+def leer_balance_reporte(ruta: str | Path, supply_site: str | None = None,
+                         anio: int | None = None, mes: int | None = None) -> Balance:
+    """Balanza en columnas fijas (encabezado 'Account  Description ...'). No trae supply-site ni
+    periodo: se toman de los parámetros o del nombre del archivo (p. ej. Tomco-Balanza-sept26)."""
+    ss_nombre, anio_nombre, mes_nombre = periodo_desde_nombre(ruta)
+    supply_site, anio, mes = supply_site or ss_nombre, anio or anio_nombre, mes or mes_nombre
+    if not (supply_site and anio and mes):
+        raise ErrorDeArchivo(
+            "Esta balanza no trae supply-site ni periodo y no los pude sacar del nombre del archivo. "
+            "Indícalos con --supply-site, --anio y --mes."
+        )
+    _validar_periodo(anio, mes, 1)
+    balance = Balance(supply_site=supply_site, anio=anio, mes=mes)
+    vistas: set[str] = set()
+    for numero, linea in enumerate(_leer_texto(ruta).splitlines(), start=1):
+        if not linea.strip() or linea.startswith(("Account", "----")):
+            continue
+        m = _RENGLON_REPORTE.match(linea)
+        if not m:
+            raise ErrorDeArchivo(f"Línea {numero}: no tiene el formato cuenta, descripción y 4 importes.")
+        cuenta = m.group(1).replace("-", "")
+        if cuenta in vistas:
+            raise ErrorDeArchivo(f"Línea {numero}: la cuenta {cuenta} está repetida.")
+        vistas.add(cuenta)
+        saldo_ini, cargos, abonos, saldo_fin = (_importe_reporte(x) for x in m.groups()[2:])
+        balance.cuentas.append({
+            "SupplySite": supply_site, "Anio": anio, "Mes": mes, "Cuenta": cuenta,
+            "Descripcion": m.group(2).strip() or None,
+            "SaldoInicial": saldo_ini, "Cargos": cargos, "Abonos": abonos, "SaldoFinal": saldo_fin,
+        })
+    if not balance.cuentas:
+        raise ErrorDeArchivo("La balanza no trae cuentas.")
+    return balance
+
+
+def es_balanza_reporte(ruta: str | Path) -> bool:
+    lineas = _leer_texto(ruta).splitlines()
+    return bool(lineas) and lineas[0].lstrip().startswith("Account")
+
+
+def leer_balance(ruta: str | Path, supply_site: str | None = None,
+                 anio: int | None = None, mes: int | None = None) -> Balance:
+    if es_balanza_reporte(ruta):
+        return leer_balance_reporte(ruta, supply_site, anio, mes)
     lineas = _leer_texto(ruta).splitlines()
     if not lineas:
         raise ErrorDeArchivo("El archivo de balance está vacío.")

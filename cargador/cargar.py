@@ -38,6 +38,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Carga inventario, catálogo de product code (Excel) o balance contable (txt) a SQL Server.")
     parser.add_argument("archivo", nargs="?", help="Ruta del archivo. Si no se indica, se pregunta.")
     parser.add_argument("--validar", action="store_true", help="Solo revisa el archivo; no guarda en la base de datos.")
+    parser.add_argument("--supply-site", help="Balanza sin encabezado: supply-site (si no, se toma del nombre del archivo).")
+    parser.add_argument("--anio", type=int, help="Balanza sin encabezado: año.")
+    parser.add_argument("--mes", type=int, help="Balanza sin encabezado: mes.")
     parser.add_argument("--conexion", help="Cadena de conexión ODBC (en lugar de DINAMEX_SQL_CONN).")
     args = parser.parse_args(argv)
 
@@ -55,8 +58,10 @@ def main(argv: list[str] | None = None) -> int:
             tipo = "prodcode"
         nombres = {"inventario": "inventario", "balance": "balance contable", "prodcode": "catálogo de product code"}
         print(f"Leyendo {nombres[tipo]}: {ruta.name}")
-        lector = {"inventario": leer_inventario, "balance": leer_balance, "prodcode": leer_catalogo_prodcode}[tipo]
-        datos = lector(ruta)
+        if tipo == "balance":
+            datos = leer_balance(ruta, args.supply_site, args.anio, args.mes)
+        else:
+            datos = {"inventario": leer_inventario, "prodcode": leer_catalogo_prodcode}[tipo](ruta)
     except ErrorDeArchivo as error:
         print(f"Error en el archivo: {error}", file=sys.stderr)
         return 1
