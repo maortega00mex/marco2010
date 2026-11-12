@@ -178,3 +178,10 @@ def test_balanza_reporte_sin_periodo(tmp_path):
     with pytest.raises(ErrorDeArchivo, match="--supply-site"):
         leer_balance(ruta)
     assert leer_balance(ruta, "SDID", 2026, 8).supply_site == "SDID"
+
+
+def test_item_en_minusculas_se_une_al_mismo_articulo(tmp_path):
+    inv = leer_inventario(_excel(tmp_path, [_fila(item="TM-302", loc="A1", total=50),
+                                             _fila(item="tm-302", loc="A2", site="SOME", supply="SDID", total=5)]))
+    assert list(inv.catalogo) == [("SDID", "TM-302")]
+    assert {r["Item"] for r in inv.detalle} == {"TM-302"}

@@ -154,7 +154,7 @@ def leer_inventario(ruta: str | Path) -> Inventario:
                 i = indice.get(nombre)
                 return fila[i] if i is not None and i < len(fila) else None
 
-            item = _texto(v("item"))
+            item = _texto(v("item")).upper()  # SQL Server no distingue mayúsculas: "tm-302" = "TM-302"
             if not item:
                 continue  # renglón vacío
             site = _texto(v("site"))
