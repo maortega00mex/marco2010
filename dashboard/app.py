@@ -21,6 +21,7 @@ from flask import Flask, jsonify, request, send_from_directory
 VARIABLE_CONEXION = "DINAMEX_SQL_CONN"
 CARPETA_STATIC = Path(__file__).resolve().parent / "static"
 TOP_ARTICULOS = 15
+LINEAS_EN_TENDENCIA = 5  # el resto se agrupa en "Otras líneas"
 
 
 def conexion_sql_server():
@@ -34,6 +35,26 @@ def conexion_sql_server():
 
 def _valor(v):
     return float(v) if isinstance(v, Decimal) else v
+
+
+def agrupar_lineas(filas: list[dict], periodos: list[dict]) -> dict:
+    """Series por línea para la tendencia: las de mayor costo total (sumando todos los periodos)
+    y el resto en "Otras líneas". Cada serie trae un valor por periodo (0 si no hubo inventario)."""
+    totales: dict[str, float] = {}
+    for f in filas:
+        totales[f["Linea"]] = totales.get(f["Linea"], 0) + (f["Costo"] or 0)
+    principales = sorted(totales, key=totales.get, reverse=True)[:LINEAS_EN_TENDENCIA]
+    claves = [(p["Anio"], p["Mes"]) for p in periodos]
+    series = {n: dict.fromkeys(claves, 0.0) for n in principales}
+    otras = dict.fromkeys(claves, 0.0)
+    for f in filas:
+        destino = series.get(f["Linea"], otras)
+        destino[(f["Anio"], f["Mes"])] += f["Costo"] or 0
+    resultado = [{"nombre": n, "valores": [series[n][k] for k in claves]} for n in principales]
+    if len(totales) > len(principales):
+        resultado.append({"nombre": "Otras líneas", "valores": [otras[k] for k in claves], "otras": True,
+                          "cuantas": len(totales) - len(principales)})
+    return {"periodos": [{"Anio": a, "Mes": m} for a, m in claves], "series": resultado}
 
 
 def crear_app(conectar: Callable = conexion_sql_server) -> Flask:
@@ -114,6 +135,12 @@ def crear_app(conectar: Callable = conexion_sql_server) -> Flask:
             {BASE} {where_t}
             GROUP BY d.Anio, d.Mes ORDER BY d.Anio, d.Mes""", p_t)
 
+        por_linea_mes = consultar(f"""
+            SELECT d.Anio, d.Mes, COALESCE(a.Linea, '(sin línea)') AS Linea, SUM(d.TotalCost) AS Costo
+            {BASE} {where_t}
+            GROUP BY d.Anio, d.Mes, COALESCE(a.Linea, '(sin línea)')""", p_t)
+        tendencia_linea = agrupar_lineas(por_linea_mes, tendencia)
+
         cond_c, p_c = ["Anio = ?", "Mes = ?"], [int(request.args["anio"]), int(request.args["mes"])]
         if request.args.get("ss"):
             cond_c.append("SupplySite = ?")
@@ -132,6 +159,7 @@ def crear_app(conectar: Callable = conexion_sql_server) -> Flask:
             "por_linea": agrupado("a.Linea"),
             "top_articulos": top,
             "tendencia": tendencia,
+            "tendencia_linea": tendencia_linea,
         })
 
     return app

@@ -17,6 +17,9 @@
   --border: rgba(11,11,11,0.10);
   --series-1: #2a78d6;
   --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
   --good: #006300;
   --critical: #d03b3b;
   --hover: rgba(11,11,11,0.04);
@@ -34,7 +37,10 @@
     --border: rgba(255,255,255,0.10);
     --series-1: #3987e5;
     --series-2: #d95926;
-    --good: #0ca30c;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+      --good: #0ca30c;
     --critical: #e66767;
     --hover: rgba(255,255,255,0.05);
   }
@@ -51,6 +57,9 @@
   --border: rgba(255,255,255,0.10);
   --series-1: #3987e5;
   --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
   --good: #0ca30c;
   --critical: #e66767;
   --hover: rgba(255,255,255,0.05);
@@ -171,6 +180,14 @@ svg .valor { fill: var(--text-primary); }
     <div id="g-stat"></div>
   </section>
 
+  <section class="card span-12">
+    <h2>Tendencia por línea</h2>
+    <p class="nota" id="tl-nota">Costo por mes de las 5 líneas de mayor costo, con los filtros actuales (sin filtrar periodo). Las demás líneas suman en la tabla.</p>
+    <div class="leyenda" id="tl-leyenda"></div>
+    <div id="g-tend-linea"></div>
+    <div class="tabla-scroll" style="margin-top:12px"><table id="t-tend-linea"></table></div>
+  </section>
+
   <section class="card span-4"><h2>Por tipo</h2><p class="nota">Costo por tipo de material.</p><div id="g-tipo"></div></section>
   <section class="card span-4"><h2>Por site</h2><p class="nota">Empresa que tiene el inventario.</p><div id="g-site"></div></section>
   <section class="card span-4"><h2>Por línea</h2><p class="nota">Las 10 líneas de mayor costo.</p><div id="g-linea"></div></section>
@@ -190,7 +207,7 @@ const STAT = { A: "A · Activo", S: "S · Lento movimiento", O: "O · Obsoleto" 
 const pesos = (v) => (v < 0 ? "−$" : "$") + Math.abs(Number(v || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /* Máximo "redondo" para el eje: 1, 2, 2.5 o 5 por potencia de 10. */
 const maxRedondo = (v) => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v));
-  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; };
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p; return 10 * p; };
 const millones = (v) => {
   const a = Math.abs(v);
   const s = a >= 1e6 ? (a / 1e6).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + " M"
@@ -320,6 +337,55 @@ function graficaTendencia(contenedor, datos) {
   zona.addEventListener("mouseleave", () => { guia.setAttribute("visibility", "hidden"); puntos.forEach((p) => p.setAttribute("r", 4)); ocultarTip(); });
 }
 
+/* ---------- tendencia por línea: varias series con crosshair ---------- */
+const COLORES_SERIE = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)"];
+function graficaTendenciaLinea(datos) {
+  const cont = $("g-tend-linea"); cont.innerHTML = "";
+  const { periodos } = datos;
+  const series = datos.series.filter((s) => !s.otras);  /* "Otras líneas" va solo en la tabla: su monto aplastaría la gráfica */
+  const color = (s, i) => COLORES_SERIE[i];
+  $("tl-leyenda").innerHTML = series.map((s, i) =>
+    `<span style="--c: ${color(s, i)}">${esc(s.nombre)}</span>`).join("");
+  if (!periodos.length || !series.length) { cont.innerHTML = '<p class="aviso">Sin datos.</p>'; $("t-tend-linea").innerHTML = ""; return; }
+  const ancho = cont.clientWidth || 600, alto = 260, m = { t: 12, r: 16, b: 28, l: 64 };
+  const w = ancho - m.l - m.r, h = alto - m.t - m.b;
+  const max = maxRedondo(Math.max(...series.flatMap((s) => s.valores)) * 1.05);
+  const x = (i) => m.l + (periodos.length === 1 ? w / 2 : (w * i) / (periodos.length - 1));
+  const y = (v) => m.t + h - (h * v) / max;
+  const svg = el("svg", { viewBox: `0 0 ${ancho} ${alto}`, role: "img", "aria-label": "Tendencia del costo por línea" }, cont);
+  for (let k = 0; k <= 4; k++) {
+    const v = (max * k) / 4, yy = y(v);
+    el("line", { x1: m.l, x2: ancho - m.r, y1: yy, y2: yy, stroke: k ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }, svg);
+    const t = el("text", { x: m.l - 8, y: yy + 4, "text-anchor": "end" }, svg); t.textContent = millones(v);
+  }
+  periodos.forEach((p, i) => {
+    const t = el("text", { x: x(i), y: alto - 8, "text-anchor": "middle" }, svg);
+    t.textContent = `${MESES[p.Mes]} ${String(p.Anio).slice(2)}`;
+  });
+  const puntos = series.map((s, j) => {
+    if (periodos.length > 1)
+      el("path", { d: s.valores.map((v, i) => `${i ? "L" : "M"}${x(i)},${y(v)}`).join(" "), fill: "none",
+                   stroke: color(s, j), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+    return s.valores.map((v, i) => el("circle", { cx: x(i), cy: y(v), r: 4, fill: color(s, j),
+                                                   stroke: "var(--surface-1)", "stroke-width": 2 }, svg));
+  });
+  const guia = el("line", { y1: m.t, y2: m.t + h, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const zona = el("rect", { x: m.l - 10, y: m.t, width: w + 20, height: h, fill: "transparent" }, svg);
+  zona.addEventListener("mousemove", (ev) => {
+    const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * ancho;
+    let i = 0, mejor = Infinity;
+    periodos.forEach((_, k) => { const d = Math.abs(x(k) - px); if (d < mejor) { mejor = d; i = k; } });
+    guia.setAttribute("x1", x(i)); guia.setAttribute("x2", x(i)); guia.setAttribute("visibility", "visible");
+    puntos.forEach((ps) => ps.forEach((p, k) => p.setAttribute("r", k === i ? 6 : 4)));
+    const filas = series.map((s, j) => ({ s, j, v: s.valores[i] })).sort((a, b) => b.v - a.v);
+    mostrarTip(ev, `<b>${MESES[periodos[i].Mes]} ${periodos[i].Anio}</b><br>` + filas.map(({ s, j, v }) =>
+      `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color(s, j)};margin-right:6px"></span>${esc(s.nombre)}: ${pesos(v)}`).join("<br>"));
+  });
+  zona.addEventListener("mouseleave", () => { guia.setAttribute("visibility", "hidden"); puntos.forEach((ps) => ps.forEach((p) => p.setAttribute("r", 4))); ocultarTip(); });
+  $("t-tend-linea").innerHTML = `<thead><tr><th>Línea</th>${periodos.map((p) => `<th class="num">${MESES[p.Mes]} ${p.Anio}</th>`).join("")}</tr></thead><tbody>` +
+    datos.series.map((s) => `<tr><td>${esc(s.nombre)}${s.otras ? ` <span class="aviso">(${s.cuantas} líneas)</span>` : ""}</td>${s.valores.map((v) => `<td class="num">${pesos(v)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+}
+
 /* ---------- tablas ---------- */
 function tablaConciliacion(filas) {
   const t = $("t-conc");
@@ -360,6 +426,7 @@ function pintar(d) {
   $("k-insp").textContent = millones(k.CostoInspeccion); $("k-insp-p").textContent = pct(k.CostoInspeccion, k.Costo);
   graficaConciliacion($("g-conc"), d.conciliacion); tablaConciliacion(d.conciliacion);
   graficaTendencia($("g-tend"), d.tendencia);
+  graficaTendenciaLinea(d.tendencia_linea);
   const tipC = (n) => (x) => `<b>${esc(n(x))}</b><br>${pesos(x.Costo)}<br>${pct(x.Costo, k.Costo)}`;
   barras($("g-stat"), d.por_stat, { etiqueta: (x) => STAT[x.Nombre] || x.Nombre, valor: (x) => x.Costo, tooltip: tipC((x) => STAT[x.Nombre] || x.Nombre) });
   barras($("g-tipo"), d.por_tipo, { etiqueta: (x) => x.Nombre, valor: (x) => x.Costo, tooltip: tipC((x) => x.Nombre) });

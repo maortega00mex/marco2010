@@ -23,7 +23,7 @@ Para detenerlo, cierra la ventana negra (o Ctrl+C).
 
 - **Indicadores:** costo total, lento movimiento (S), obsoleto (O) y material en inspección.
 - **Conciliación contable:** inventario contra saldo final del balance por cuenta (vista `dbo.vConciliacionContable`). Solo la filtran periodo y supply-site.
-- **Tendencia** del costo por mes, y desglose **por stat, tipo, site y línea**.
+- **Tendencia** del costo por mes, **tendencia por línea** (las 5 de mayor costo, todos los periodos), y desglose **por stat, tipo, site y línea**.
 - **Los 15 artículos de mayor costo.**
 
 Filtros: periodo, supply-site, site, línea, stat, tipo y material (disponible / inspección). Pasa el mouse sobre las barras para ver el detalle.
