@@ -41,3 +41,7 @@ El script se puede correr varias veces: solo crea lo que falta. Todo queda en el
 ```sql
 SELECT * FROM dbo.vConciliacionContable WHERE Anio = 2026 AND Mes = 10 ORDER BY SupplySite, Cuenta;
 ```
+
+## Existencias acumuladas
+
+`04_existencias_acumuladas.sql` genera `dbo.ExistenciasAcumuladas` desde `dbo.ExistenciasDetalle` (no necesita el Excel). Cambia `@Anio` y `@Mes` al inicio y ejecútalo; reemplaza ese periodo y valida que on-hand y costo cuadren contra el detalle. Carga antes el catálogo de artículos para que se llene el Tipo.
