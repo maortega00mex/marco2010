@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Costos e Inventarios</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good: #006300;
+  --critical: #d03b3b;
+  --hover: rgba(11,11,11,0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good: #0ca30c;
+    --critical: #e66767;
+    --hover: rgba(255,255,255,0.05);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --good: #0ca30c;
+  --critical: #e66767;
+  --hover: rgba(255,255,255,0.05);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header { padding: 20px 24px 8px; }
+h1 { font-size: 20px; margin: 0 0 2px; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0; }
+.filtros {
+  display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end;
+  padding: 12px 24px; position: sticky; top: 0; z-index: 5;
+  background: var(--page); border-bottom: 1px solid var(--border);
+}
+.filtros label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-secondary); }
+.filtros select {
+  font: inherit; color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-width: 120px;
+}
+.filtros button {
+  font: inherit; background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 6px; padding: 5px 10px; cursor: pointer;
+}
+main { padding: 16px 24px 40px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+.card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; min-width: 0;
+}
+.card h2 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+.card .nota { color: var(--text-secondary); font-size: 12px; margin: 0 0 12px; }
+.span-12 { grid-column: span 12; } .span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; }
+.span-3 { grid-column: span 3; } .span-8 { grid-column: span 8; }
+@media (max-width: 1000px) { .span-6, .span-4, .span-3, .span-8 { grid-column: span 12; } }
+@media (min-width: 640px) and (max-width: 1000px) { .span-3 { grid-column: span 6; } }
+.kpi .etq { color: var(--text-secondary); font-size: 12px; }
+.kpi .val { font-size: 26px; font-weight: 600; margin-top: 4px; }
+.kpi .det { color: var(--text-muted); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
+td.num, th.num { text-align: right; }
+td.desc { white-space: normal; min-width: 180px; }
+tr:hover td { background: var(--hover); }
+.tabla-scroll { overflow-x: auto; }
+.pos { color: var(--good); } .neg { color: var(--critical); }
+.aviso { color: var(--text-muted); font-size: 12px; }
+.leyenda { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.leyenda span::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  margin-right: 6px; vertical-align: -1px; background: var(--c);
+}
+svg { display: block; width: 100%; overflow: visible; }
+svg text { fill: var(--text-secondary); font-size: 12px; }
+svg .valor { fill: var(--text-primary); }
+.tooltip {
+  position: fixed; pointer-events: none; z-index: 20; display: none;
+  background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  font-variant-numeric: tabular-nums; max-width: 280px;
+}
+.estado { padding: 40px 24px; color: var(--text-secondary); }
+@media (max-width: 640px) {
+  header, main, .filtros, .estado { padding-left: 16px; padding-right: 16px; }
+  .filtros { position: static; }
+  .filtros label { flex: 1 1 140px; }
+  .filtros select { min-width: 0; width: 100%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Costos e Inventarios</h1>
+  <p class="sub">Importes en moneda nacional. Fuente: base invDinamex.</p>
+</header>
+
+<div class="filtros" id="filtros">
+  <label>Periodo<select id="f-periodo"></select></label>
+  <label>Supply-site<select id="f-ss"><option value="">Todos</option></select></label>
+  <label>Site<select id="f-site"><option value="">Todos</option></select></label>
+  <label>Línea<select id="f-linea"><option value="">Todas</option></select></label>
+  <label>Stat<select id="f-stat">
+    <option value="">Todos</option><option value="A">A · Activo</option>
+    <option value="S">S · Lento movimiento</option><option value="O">O · Obsoleto</option></select></label>
+  <label>Tipo<select id="f-tipo"><option value="">Todos</option></select></label>
+  <label>Material<select id="f-nonnet">
+    <option value="">Todo</option><option value="no">Disponible</option><option value="yes">Inspección</option></select></label>
+  <button id="limpiar" type="button">Limpiar filtros</button>
+</div>
+
+<div id="estado" class="estado">Cargando…</div>
+
+<main id="contenido" hidden>
+  <section class="card kpi span-3"><div class="etq">Costo total del inventario</div><div class="val" id="k-costo"></div><div class="det" id="k-art"></div></section>
+  <section class="card kpi span-3"><div class="etq">Lento movimiento (S)</div><div class="val" id="k-lento"></div><div class="det" id="k-lento-p"></div></section>
+  <section class="card kpi span-3"><div class="etq">Obsoleto (O)</div><div class="val" id="k-obs"></div><div class="det" id="k-obs-p"></div></section>
+  <section class="card kpi span-3"><div class="etq">Material en inspección</div><div class="val" id="k-insp"></div><div class="det" id="k-insp-p"></div></section>
+
+  <section class="card span-12">
+    <h2>Conciliación contable</h2>
+    <p class="nota">Costo del inventario contra saldo final del balance, por cuenta. Solo la filtran el periodo y el supply-site.</p>
+    <div class="leyenda"><span style="--c: var(--series-1)">Inventario</span><span style="--c: var(--series-2)">Balance</span></div>
+    <div id="g-conc"></div>
+    <div class="tabla-scroll" style="margin-top:12px"><table id="t-conc"></table></div>
+    <p class="aviso" id="conc-aviso"></p>
+  </section>
+
+  <section class="card span-8">
+    <h2>Tendencia del costo de inventario</h2>
+    <p class="nota">Costo total por mes con los filtros actuales (sin filtrar periodo).</p>
+    <div id="g-tend"></div>
+  </section>
+  <section class="card span-4">
+    <h2>Por stat</h2>
+    <p class="nota">Costo por estado del artículo.</p>
+    <div id="g-stat"></div>
+  </section>
+
+  <section class="card span-4"><h2>Por tipo</h2><p class="nota">Costo por tipo de material.</p><div id="g-tipo"></div></section>
+  <section class="card span-4"><h2>Por site</h2><p class="nota">Empresa que tiene el inventario.</p><div id="g-site"></div></section>
+  <section class="card span-4"><h2>Por línea</h2><p class="nota">Las 10 líneas de mayor costo.</p><div id="g-linea"></div></section>
+
+  <section class="card span-12">
+    <h2>Artículos de mayor costo</h2>
+    <p class="nota">Los 15 artículos con mayor costo total en el periodo.</p>
+    <div class="tabla-scroll"><table id="t-top"></table></div>
+  </section>
+</main>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const STAT = { A: "A · Activo", S: "S · Lento movimiento", O: "O · Obsoleto" };
+const pesos = (v) => (v < 0 ? "−$" : "$") + Math.abs(Number(v || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* Máximo "redondo" para el eje: 1, 2, 2.5 o 5 por potencia de 10. */
+const maxRedondo = (v) => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; };
+const millones = (v) => {
+  const a = Math.abs(v);
+  const s = a >= 1e6 ? (a / 1e6).toLocaleString("es-MX", { maximumFractionDigits: 2 }) + " M"
+          : a >= 1e3 ? (a / 1e3).toLocaleString("es-MX", { maximumFractionDigits: 1 }) + " K"
+          : a.toLocaleString("es-MX", { maximumFractionDigits: 0 });
+  return (v < 0 ? "−$" : "$") + s;
+};
+const pct = (p, t) => t ? (100 * p / t).toLocaleString("es-MX", { maximumFractionDigits: 1 }) + "% del total" : "";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const NS = "http://www.w3.org/2000/svg";
+
+/* ---------- tooltip ---------- */
+const tip = $("tooltip");
+function mostrarTip(ev, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const x = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+  const y = Math.min(ev.clientY + 14, window.innerHeight - tip.offsetHeight - 8);
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function ocultarTip() { tip.style.display = "none"; }
+
+function el(tag, attrs = {}, padre) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (padre) padre.appendChild(e);
+  return e;
+}
+/* Barra horizontal con extremo de datos redondeado (4px) y anclada a la base. */
+function rutaBarra(x0, y, w, h, r = 4) {
+  if (w <= 0) return "";
+  r = Math.min(r, w, h / 2);
+  return `M${x0},${y} H${x0 + w - r} Q${x0 + w},${y} ${x0 + w},${y + r} V${y + h - r} Q${x0 + w},${y + h} ${x0 + w - r},${y + h} H${x0} Z`;
+}
+
+/* ---------- barras horizontales (una serie) ---------- */
+function barras(contenedor, datos, { etiqueta, valor, tooltip, color = "var(--series-1)" }) {
+  contenedor.innerHTML = "";
+  if (!datos.length) { contenedor.innerHTML = '<p class="aviso">Sin datos con estos filtros.</p>'; return; }
+  const ancho = contenedor.clientWidth || 360, alto = 22, gap = 8, izq = Math.min(130, ancho * 0.38), der = 70;
+  const max = Math.max(...datos.map(valor), 0) || 1;
+  const svg = el("svg", { viewBox: `0 0 ${ancho} ${datos.length * (alto + gap)}`, role: "img" }, contenedor);
+  datos.forEach((d, i) => {
+    const y = i * (alto + gap), w = Math.max(0, (ancho - izq - der) * valor(d) / max);
+    const g = el("g", {}, svg);
+    const t = el("text", { x: izq - 8, y: y + alto / 2 + 4, "text-anchor": "end" }, g);
+    t.textContent = etiqueta(d).length > 18 ? etiqueta(d).slice(0, 17) + "…" : etiqueta(d);
+    el("path", { d: rutaBarra(izq, y + 3, w, alto - 6), fill: color }, g);
+    const v = el("text", { x: izq + w + 6, y: y + alto / 2 + 4, class: "valor" }, g);
+    v.textContent = millones(valor(d));
+    const hit = el("rect", { x: 0, y, width: ancho, height: alto + gap, fill: "transparent" }, g);
+    hit.addEventListener("mousemove", (ev) => mostrarTip(ev, tooltip(d)));
+    hit.addEventListener("mouseleave", ocultarTip);
+  });
+}
+
+/* ---------- conciliación: barras agrupadas inventario vs balance ---------- */
+function graficaConciliacion(contenedor, filas) {
+  contenedor.innerHTML = "";
+  const datos = filas.filter((f) => f.BalanceCargado);
+  if (!datos.length) { contenedor.innerHTML = '<p class="aviso">No hay balance cargado para este periodo y supply-site.</p>'; return; }
+  const ancho = contenedor.clientWidth || 600, barra = 14, gapGrupo = 14, izq = Math.min(210, ancho * 0.4), der = 70;
+  const altoGrupo = barra * 2 + 2;
+  const max = Math.max(...datos.flatMap((d) => [d.CostoInventario, d.SaldoContable]), 0) || 1;
+  const escala = (v) => Math.max(0, (ancho - izq - der) * v / max);
+  const svg = el("svg", { viewBox: `0 0 ${ancho} ${datos.length * (altoGrupo + gapGrupo)}`, role: "img",
+                          "aria-label": "Inventario contra balance por cuenta" }, contenedor);
+  datos.forEach((d, i) => {
+    const y = i * (altoGrupo + gapGrupo);
+    const g = el("g", {}, svg);
+    const t1 = el("text", { x: izq - 8, y: y + barra - 2, "text-anchor": "end" }, g);
+    t1.textContent = `${d.SupplySite} · ${d.Cuenta}`;
+    const t2 = el("text", { x: izq - 8, y: y + altoGrupo - 1, "text-anchor": "end", style: "fill: var(--text-muted); font-size: 11px" }, g);
+    const desc = (d.DescripcionCuenta || "").replace(/\s*@\s*$/, "").trim();
+    t2.textContent = desc.length > 26 ? desc.slice(0, 25) + "…" : desc;
+    [[d.CostoInventario, "var(--series-1)", 0], [d.SaldoContable, "var(--series-2)", barra + 2]].forEach(([v, c, dy]) => {
+      el("path", { d: rutaBarra(izq, y + dy, escala(v), barra), fill: c }, g);
+      const tv = el("text", { x: izq + escala(v) + 6, y: y + dy + barra - 3, class: "valor" }, g);
+      tv.textContent = millones(v);
+    });
+    const hit = el("rect", { x: 0, y: y - gapGrupo / 2, width: ancho, height: altoGrupo + gapGrupo, fill: "transparent" }, g);
+    hit.addEventListener("mousemove", (ev) => mostrarTip(ev,
+      `<b>${esc(d.SupplySite)} · ${esc(d.Cuenta)}</b><br>${esc(desc)}<br>` +
+      `Inventario: ${pesos(d.CostoInventario)}<br>Balance: ${pesos(d.SaldoContable)}<br>` +
+      `<b>Diferencia: ${pesos(d.Diferencia)}</b>`));
+    hit.addEventListener("mouseleave", ocultarTip);
+  });
+}
+
+/* ---------- tendencia: línea con crosshair ---------- */
+function graficaTendencia(contenedor, datos) {
+  contenedor.innerHTML = "";
+  if (!datos.length) { contenedor.innerHTML = '<p class="aviso">Sin datos.</p>'; return; }
+  const ancho = contenedor.clientWidth || 600, alto = 220, m = { t: 12, r: 16, b: 28, l: 64 };
+  const w = ancho - m.l - m.r, h = alto - m.t - m.b;
+  const max = maxRedondo(Math.max(...datos.map((d) => d.Costo)) * 1.05);
+  const x = (i) => m.l + (datos.length === 1 ? w / 2 : (w * i) / (datos.length - 1));
+  const y = (v) => m.t + h - (h * v) / max;
+  const svg = el("svg", { viewBox: `0 0 ${ancho} ${alto}`, role: "img", "aria-label": "Tendencia del costo" }, contenedor);
+  for (let k = 0; k <= 4; k++) {
+    const v = (max * k) / 4, yy = y(v);
+    el("line", { x1: m.l, x2: ancho - m.r, y1: yy, y2: yy, stroke: k ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }, svg);
+    const t = el("text", { x: m.l - 8, y: yy + 4, "text-anchor": "end" }, svg); t.textContent = millones(v);
+  }
+  datos.forEach((d, i) => {
+    const t = el("text", { x: x(i), y: alto - 8, "text-anchor": "middle" }, svg);
+    t.textContent = `${MESES[d.Mes]} ${String(d.Anio).slice(2)}`;
+  });
+  if (datos.length > 1) {
+    el("path", { d: datos.map((d, i) => `${i ? "L" : "M"}${x(i)},${y(d.Costo)}`).join(" "),
+                 fill: "none", stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  }
+  const guia = el("line", { y1: m.t, y2: m.t + h, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const puntos = datos.map((d, i) => el("circle", { cx: x(i), cy: y(d.Costo), r: 4, fill: "var(--series-1)",
+                                                     stroke: "var(--surface-1)", "stroke-width": 2 }, svg));
+  const ultimo = datos[datos.length - 1];
+  const lv = el("text", { x: x(datos.length - 1), y: y(ultimo.Costo) - 10, "text-anchor": datos.length > 1 ? "end" : "middle", class: "valor" }, svg);
+  lv.textContent = millones(ultimo.Costo);
+  const zona = el("rect", { x: m.l, y: m.t, width: w, height: h, fill: "transparent" }, svg);
+  zona.addEventListener("mousemove", (ev) => {
+    const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * ancho;
+    let i = 0, mejor = Infinity;
+    datos.forEach((_, k) => { const dd = Math.abs(x(k) - px); if (dd < mejor) { mejor = dd; i = k; } });
+    guia.setAttribute("x1", x(i)); guia.setAttribute("x2", x(i)); guia.setAttribute("visibility", "visible");
+    puntos.forEach((p, k) => p.setAttribute("r", k === i ? 6 : 4));
+    mostrarTip(ev, `<b>${MESES[datos[i].Mes]} ${datos[i].Anio}</b><br>${pesos(datos[i].Costo)}`);
+  });
+  zona.addEventListener("mouseleave", () => { guia.setAttribute("visibility", "hidden"); puntos.forEach((p) => p.setAttribute("r", 4)); ocultarTip(); });
+}
+
+/* ---------- tablas ---------- */
+function tablaConciliacion(filas) {
+  const t = $("t-conc");
+  if (!filas.length) { t.innerHTML = ""; $("conc-aviso").textContent = "No hay datos de conciliación para este periodo."; return; }
+  const sinBalance = [...new Set(filas.filter((f) => !f.BalanceCargado).map((f) => f.SupplySite))];
+  $("conc-aviso").textContent = sinBalance.length
+    ? `Sin balance cargado para ${sinBalance.join(", ")}: su diferencia es todo el inventario y no se grafica.` : "";
+  const dif = (v) => `<td class="num ${v > 0.005 ? "pos" : v < -0.005 ? "neg" : ""}">${v > 0.005 ? "▲ " : v < -0.005 ? "▼ " : ""}${pesos(v)}</td>`;
+  t.innerHTML = `<thead><tr><th>Supply-site</th><th>Cuenta</th><th>Descripción</th><th class="num">Inventario</th>
+    <th class="num">Balance</th><th class="num">Diferencia</th></tr></thead><tbody>` +
+    filas.map((f) => `<tr><td>${esc(f.SupplySite)}</td><td>${esc(f.Cuenta)}</td>
+      <td class="desc">${esc((f.DescripcionCuenta || "").replace(/\s*@\s*$/, ""))}${f.BalanceCargado ? "" : ' <span class="aviso">(sin balance)</span>'}</td>
+      <td class="num">${pesos(f.CostoInventario)}</td><td class="num">${f.BalanceCargado ? pesos(f.SaldoContable) : "—"}</td>
+      ${f.BalanceCargado ? dif(f.Diferencia) : '<td class="num aviso">—</td>'}</tr>`).join("") + "</tbody>";
+}
+function tablaTop(filas) {
+  $("t-top").innerHTML = `<thead><tr><th>Supply-site</th><th>Artículo</th><th>Descripción</th><th>Línea</th><th>Stat</th>
+    <th class="num">On-hand</th><th class="num">Costo total</th></tr></thead><tbody>` +
+    filas.map((f) => `<tr><td>${esc(f.SupplySite)}</td><td>${esc(f.Item)}</td><td class="desc">${esc(f.Descripcion)}</td>
+      <td>${esc(f.Linea)}</td><td>${esc(STAT[f.Stat] || f.Stat || "")}</td>
+      <td class="num">${Number(f.OnHand).toLocaleString("es-MX")}</td><td class="num">${pesos(f.Costo)}</td></tr>`).join("") + "</tbody>";
+}
+
+/* ---------- datos y filtros ---------- */
+let ultimo = null;
+function parametros() {
+  const [anio, mes] = $("f-periodo").value.split("-");
+  const p = new URLSearchParams({ anio, mes });
+  for (const [id, k] of [["f-ss", "ss"], ["f-site", "site"], ["f-linea", "linea"], ["f-stat", "stat"], ["f-tipo", "tipo"], ["f-nonnet", "nonnet"]])
+    if ($(id).value) p.set(k, $(id).value);
+  return p;
+}
+function pintar(d) {
+  const k = d.kpis;
+  $("k-costo").textContent = millones(k.Costo); $("k-art").textContent = `${Number(k.Articulos).toLocaleString("es-MX")} artículos · ${pesos(k.Costo)}`;
+  $("k-lento").textContent = millones(k.CostoLento); $("k-lento-p").textContent = pct(k.CostoLento, k.Costo);
+  $("k-obs").textContent = millones(k.CostoObsoleto); $("k-obs-p").textContent = pct(k.CostoObsoleto, k.Costo);
+  $("k-insp").textContent = millones(k.CostoInspeccion); $("k-insp-p").textContent = pct(k.CostoInspeccion, k.Costo);
+  graficaConciliacion($("g-conc"), d.conciliacion); tablaConciliacion(d.conciliacion);
+  graficaTendencia($("g-tend"), d.tendencia);
+  const tipC = (n) => (x) => `<b>${esc(n(x))}</b><br>${pesos(x.Costo)}<br>${pct(x.Costo, k.Costo)}`;
+  barras($("g-stat"), d.por_stat, { etiqueta: (x) => STAT[x.Nombre] || x.Nombre, valor: (x) => x.Costo, tooltip: tipC((x) => STAT[x.Nombre] || x.Nombre) });
+  barras($("g-tipo"), d.por_tipo, { etiqueta: (x) => x.Nombre, valor: (x) => x.Costo, tooltip: tipC((x) => x.Nombre) });
+  barras($("g-site"), d.por_site, { etiqueta: (x) => x.Nombre, valor: (x) => x.Costo, tooltip: tipC((x) => x.Nombre) });
+  barras($("g-linea"), d.por_linea.slice(0, 10), { etiqueta: (x) => x.Nombre, valor: (x) => x.Costo, tooltip: tipC((x) => x.Nombre) });
+  tablaTop(d.top_articulos);
+}
+async function cargar() {
+  $("estado").hidden = false; $("estado").textContent = "Cargando…";
+  try {
+    const r = await fetch("/api/datos?" + parametros());
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    ultimo = await r.json();
+    $("estado").hidden = true; $("contenido").hidden = false;
+    pintar(ultimo);
+  } catch (e) { $("estado").textContent = "No se pudieron leer los datos: " + e.message; }
+}
+async function iniciar() {
+  try {
+    const o = await (await fetch("/api/opciones")).json();
+    if (!o.periodos.length) { $("estado").textContent = "No hay existencias cargadas en invDinamex."; return; }
+    $("f-periodo").innerHTML = o.periodos.map((p) => `<option value="${p.Anio}-${p.Mes}">${MESES[p.Mes]} ${p.Anio}</option>`).join("");
+    const llenar = (id, lista) => $(id).insertAdjacentHTML("beforeend", lista.map((v) => `<option>${esc(v)}</option>`).join(""));
+    llenar("f-ss", o.supply_sites); llenar("f-site", o.sites); llenar("f-linea", o.lineas); llenar("f-tipo", o.tipos);
+    document.querySelectorAll("#filtros select").forEach((s) => s.addEventListener("change", cargar));
+    $("limpiar").addEventListener("click", () => {
+      document.querySelectorAll("#filtros select").forEach((s) => { if (s.id !== "f-periodo") s.value = ""; });
+      cargar();
+    });
+    let espera; window.addEventListener("resize", () => { clearTimeout(espera); espera = setTimeout(() => ultimo && pintar(ultimo), 150); });
+    cargar();
+  } catch (e) { $("estado").textContent = "No se pudo conectar con el servidor: " + e.message; }
+}
+iniciar();
+</script>
+</body>
+</html>
